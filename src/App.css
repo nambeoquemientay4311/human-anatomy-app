@@ -1,38 +1,40 @@
+/* src/App.css */
+
+/* Đặt lại style cho toàn trang */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  margin: 0;
+  background-color: #f0f2f5; /* Một màu nền xám nhạt */
+  color: #333; /* Màu chữ mặc định là MÀU ĐEN */
+}
+
 .App {
   text-align: center;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
+/* Sửa lại Header - Bỏ 100vh */
 .App-header {
   background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  padding: 20px;
+  color: white; /* Chữ trong header màu trắng */
   font-size: calc(10px + 2vmin);
+}
+
+/* Style cho nội dung chính (nơi chứa lưới) */
+main {
+  padding: 20px;
+  color: #333; /* Đảm bảo chữ trong main là màu đen */
+}
+
+/* Style cho chân trang */
+footer {
+  text-align: center;
+  padding: 20px;
+  margin-top: 40px;
+  background-color: #333;
   color: white;
 }
 
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* Chúng ta không cần logo quay tròn nữa */
