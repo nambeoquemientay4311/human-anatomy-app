@@ -1,125 +1,304 @@
 // src/App.js
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
-import { auth } from './firebase'; // Import auth từ firebase
+import React, { useState, useEffect, useMemo } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link as RouterLink, Navigate, useLocation } from 'react-router-dom';
+
+// Import Firebase Auth
+import { auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 
-// Import các "Trang" (Pages)
+// Import Pages
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
-import AdminPage from './pages/AdminPage';
 import DocumentsPage from './pages/DocumentsPage';
+import AddDocumentPage from './pages/AddDocumentPage'; 
+import AdminUserPage from './pages/AdminUserPage';
+import AboutPage from './pages/AboutPage'; // <-- MỚI: Import trang Giới thiệu
+import MyBookmarksPage from './pages/MyBookmarksPage';
+import ProgressDashboardPage from './pages/ProgressDashboardPage';
 
-// Import các "Components" (Thành phần)
-import Chatbot from './components/Chatbot'; // <-- Import Chatbot
+// Import Components
+import RobokiFab from './components/RobokiFab';
+import PasswordChangeForm from './components/PasswordChangeForm'; // <--- MỚI: Import Form Đổi MK
+import { getDesignTokens } from './theme'; // <--- ĐÃ SỬA: Import hàm tạo theme
 
-import './App.css';
+// --- MỚI: Import Framer Motion ---
+import { motion, AnimatePresence } from 'framer-motion';
 
-// *** ĐÂY LÀ CHÌA KHÓA ADMIN CỦA BẠN ***
-// TODO: Thay thế chuỗi này bằng User UID của tài khoản Admin của bạn
-const ADMIN_UID = "YOUR_ADMIN_UID_GOES_HERE"; 
+
+// Import MUI
+import { 
+  AppBar, Toolbar, Typography, Container, Button, Box, 
+  ThemeProvider, CssBaseline, CircularProgress, GlobalStyles, createTheme,
+  IconButton, Menu, MenuItem, Avatar, Tooltip, Divider, ListItemIcon
+} from '@mui/material';
+
+// Import Icons
+import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
+import Brightness4Icon from '@mui/icons-material/Brightness4'; // Icon trăng (Dark)
+import Brightness7Icon from '@mui/icons-material/Brightness7'; // Icon trời (Light)
+import LogoutIcon from '@mui/icons-material/Logout';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import LockIcon from '@mui/icons-material/Lock'; // <--- MỚI: Icon Khóa
+import BookmarkIcon from '@mui/icons-material/Bookmark';
+import AssessmentIcon from '@mui/icons-material/Assessment';
+
+const ADMIN_UID = "Ca2PJoQgksbNOMLIayHS6KQj4x82"; // UID Admin của bạn
+
+// --- MỚI: Cấu hình hiệu ứng chuyển trang ---
+const pageVariants = {
+  initial: {
+    opacity: 0,
+    y: "2vh", // Bắt đầu trượt nhẹ từ dưới lên
+  },
+  in: {
+    opacity: 1,
+    y: 0,
+  },
+  out: {
+    opacity: 0,
+    y: "-2vh", // Trượt nhẹ lên trên khi thoát
+  }
+};
+
+const pageTransition = {
+  type: "tween",
+  ease: "anticipate",
+  duration: 0.5
+};
+
 
 function App() {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoading, setIsLoading] = useState(true); // State loading để chờ Firebase
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Hook này sẽ tự động chạy khi trạng thái đăng nhập thay đổi
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        // Người dùng đã đăng nhập
-        setCurrentUser(user);
-        // Kiểm tra xem có phải Admin không?
-        if (user.uid === ADMIN_UID) {
-          setIsAdmin(true);
-          console.log("Xác thực thành công: ADMIN");
-        } else {
-          setIsAdmin(false);
-          console.log("Xác thực thành công: USER");
-        }
-      } else {
-        // Người dùng đã đăng xuất
-        setCurrentUser(null);
-        setIsAdmin(false);
-      }
-      setIsLoading(false); // Đánh dấu đã tải xong trạng thái auth
-    });
+  // --- 1. QUẢN LÝ DARK MODE ---
+  const [mode, setMode] = useState('light');
 
-    // Cleanup subscription on unmount
-    return () => unsubscribe();
-  }, []); // Mảng rỗng [] nghĩa là chỉ chạy 1 lần
+  const colorMode = useMemo(() => ({
+    toggleColorMode: () => {
+      setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
+    },
+  }), []);
 
-  // Hàm Đăng xuất
-  const handleLogout = () => {
-    signOut(auth).catch((error) => console.error("Lỗi đăng xuất:", error));
+  // Tạo theme động dựa trên mode hiện tại
+  const theme = useMemo(() => createTheme(getDesignTokens(mode)), [mode]);
+
+  // --- 2. QUẢN LÝ MENU USER ---
+  const [anchorElUser, setAnchorElUser] = useState(null);
+
+  const handleOpenUserMenu = (event) => {
+    setAnchorElUser(event.currentTarget);
   };
 
-  // Hiển thị "Loading..." trong khi chờ xác thực
+  const handleCloseUserMenu = () => {
+    setAnchorElUser(null);
+  };
+
+  // --- 3. CHECK LOGIN ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAdmin(currentUser && currentUser.uid === ADMIN_UID);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    if (window.confirm("Bạn có chắc chắn muốn đăng xuất?")) {
+      handleCloseUserMenu();
+      await signOut(auth);
+      setIsAdmin(false);
+    }
+  };
+
   if (isLoading) {
-    return <div style={{textAlign: 'center', marginTop: '50px'}}>Đang tải trang...</div>;
+    return <Box sx={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
   }
 
-  // Giao diện chính của ứng dụng
-  return (
-    <BrowserRouter>
-      <div className="App">
-        
-        {/* THANH ĐIỀU HƯỚNG (NAVBAR) */}
-        <header className="App-header">
-          <h1>WebApp Khám phá Cơ thể Người 3D</h1>
-          <nav>
-            <Link to="/">Trang chủ</Link>
-            <Link to="/documents">Tài liệu</Link>
-            
-            {/* Hiển thị link Admin nếu là Admin */}
-            {isAdmin && <Link to="/admin">Trang Admin</Link>}
-            
-            {/* Hiển thị Đăng nhập hoặc Đăng xuất */}
-            {currentUser ? (
-              <button onClick={handleLogout} className="logout-button">
-                Đăng xuất ({currentUser.email})
-              </button>
-            ) : (
-              <Link to="/login">Đăng nhập</Link>
-            )}
-          </nav>
-        </header>
-
-        {/* PHẦN NỘI DUNG CHÍNH (ĐỊNH TUYẾN) */}
-        <main>
-          <Routes>
-            {/* Trang chủ: / */}
+  // Component Wrapper để chứa Routes và Location
+  const AppRoutes = () => {
+    const location = useLocation();
+    return (
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
             <Route path="/" element={<HomePage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage />} />
+            <Route path="/documents" element={<DocumentsPage user={user} />} />
+            <Route path="/add-document" element={user ? <AddDocumentPage /> : <Navigate to="/login" />} />
             
-            {/* Trang Tài liệu: /documents */}
-            <Route path="/documents" element={<DocumentsPage />} />
-            
-            {/* Trang Đăng nhập: /login */}
-            <Route path="/login" element={<LoginPage />} />
-            
-            {/* Trang Admin: /admin */}
-            {/* Bảo vệ trang này: 
-                Nếu là Admin -> cho vào AdminPage
-                Nếu không phải -> Đá về Trang chủ
-            */}
+            {/* --- ROUTE MỚI: ĐỔI MẬT KHẨU --- */}
             <Route 
-              path="/admin" 
-              element={isAdmin ? <AdminPage /> : <Navigate to="/" />} 
+              path="/change-password" 
+              element={user ? <PasswordChangeForm /> : <Navigate to="/login" />} 
             />
+            
+            <Route path="/admin-users" element={isAdmin ? <AdminUserPage /> : <Navigate to="/" />} />
+            <Route path="/my-bookmarks" element={user ? <MyBookmarksPage user={user} /> : <Navigate to="/login" />} />
+            <Route path="/progress" element={user ? <ProgressDashboardPage user={user} /> : <Navigate to="/login" />} />
+            <Route path="*" element={<Navigate to="/" />} />
           </Routes>
-        </main>
+      </AnimatePresence>
+    );
+  };
 
-        {/* CHÂN TRANG */}
-        <footer>
-          <p>Bản quyền © 2025</p>
-        </footer>
-
-        {/* CHATBOT (Hiển thị trên mọi trang) */}
-        <Chatbot />
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
       
-      </div>
-    </BrowserRouter>
+      {/* Background toàn trang thay đổi theo mode */}
+      <GlobalStyles styles={{
+        body: { 
+          background: mode === 'light' 
+            ? 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)'
+            : 'linear-gradient(135deg, #0f2027 0%, #203a43 100%, #2c5364 100%)',
+          minHeight: '100vh',
+          backgroundAttachment: 'fixed',
+          transition: 'background 0.3s ease'
+        } 
+      }} />
+
+      <Router>
+        <AppBar position="sticky" elevation={0}>
+          <Toolbar>
+            {/* LOGO */}
+            <Typography 
+              variant="h5" 
+              component="div" 
+              sx={{ flexGrow: 1, fontWeight: 'bold', cursor: 'pointer' }}
+              onClick={() => window.location.href='/'}
+            >
+              Anatomy 3D
+            </Typography>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              
+              {/* Nút Chuyển chế độ Sáng/Tối */}
+              <Tooltip title={mode === 'dark' ? "Chuyển sang Sáng" : "Chuyển sang Tối"}>
+                <IconButton onClick={colorMode.toggleColorMode} color="inherit" sx={{ mr: 1 }}>
+                  {theme.palette.mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+                </IconButton>
+              </Tooltip>
+
+              <Button color="inherit" component={RouterLink} to="/">Trang chủ</Button>
+              <Button color="inherit" component={RouterLink} to="/documents">Tài liệu</Button>
+              <Button color="inherit" component={RouterLink} to="/about">Giới thiệu</Button>
+
+              {user ? (
+                <>
+                  <Button color="inherit" component={RouterLink} to="/add-document" sx={{ display: { xs: 'none', md: 'block' } }}>
+                    Thêm Tài Liệu
+                  </Button>
+
+                  {/* AVATAR USER - Bấm vào sẽ hiện Menu */}
+                  <Tooltip title="Tài khoản">
+                    <IconButton onClick={handleOpenUserMenu} sx={{ p: 0, ml: 1 }}>
+                      <Avatar 
+                        alt={user.email} 
+                        src={user.photoURL} 
+                        sx={{ bgcolor: 'secondary.main' }}
+                      >
+                        {user.email?.charAt(0).toUpperCase()}
+                      </Avatar>
+                    </IconButton>
+                  </Tooltip>
+                  
+                  {/* MENU XỔ XUỐNG */}
+                  <Menu
+                    sx={{ mt: '45px' }}
+                    id="menu-appbar"
+                    anchorEl={anchorElUser}
+                    anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+                    keepMounted
+                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                    open={Boolean(anchorElUser)}
+                    onClose={handleCloseUserMenu}
+                    PaperProps={{
+                      elevation: 3,
+                      sx: { 
+                        overflow: 'visible', 
+                        filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))', 
+                        mt: 1.5,
+                        '&:before': { // Mũi tên trỏ lên
+                          content: '""',
+                          display: 'block',
+                          position: 'absolute',
+                          top: 0,
+                          right: 14,
+                          width: 10,
+                          height: 10,
+                          bgcolor: 'background.paper',
+                          transform: 'translateY(-50%) rotate(45deg)',
+                          zIndex: 0,
+                        },
+                      }
+                    }}
+                  >
+                    <Box sx={{ px: 2, py: 1 }}>
+                      <Typography variant="subtitle1" noWrap sx={{ fontWeight: 'bold' }}>
+                        {user.displayName || "Người dùng"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" noWrap>
+                        {user.email}
+                      </Typography>
+                    </Box>
+                    <Divider />
+                    
+                    {/* --- MỤC MỚI: ĐỔI MẬT KHẨU --- */}
+                    <MenuItem component={RouterLink} to="/change-password" onClick={handleCloseUserMenu}>
+                      <ListItemIcon><LockIcon fontSize="small" /></ListItemIcon>
+                      Đổi Mật Khẩu
+                    </MenuItem>
+
+                    {/* --- MỤC MỚI: BOOKMARKS --- */}
+                    <MenuItem component={RouterLink} to="/my-bookmarks" onClick={handleCloseUserMenu}>
+                      <ListItemIcon><BookmarkIcon fontSize="small" /></ListItemIcon>
+                      Đánh dấu của tôi
+                    </MenuItem>
+
+                    {/* --- MỤC MỚI: PROGRESS DASHBOARD --- */}
+                    <MenuItem component={RouterLink} to="/progress" onClick={handleCloseUserMenu}>
+                      <ListItemIcon><AssessmentIcon fontSize="small" /></ListItemIcon>
+                      Tiến độ học tập
+                    </MenuItem>
+                    
+                    {/* Mục dành riêng cho Admin */}
+                    {isAdmin && (
+                      <MenuItem component={RouterLink} to="/admin-users" onClick={handleCloseUserMenu}>
+                        <ListItemIcon><SupervisorAccountIcon fontSize="small" /></ListItemIcon>
+                        Quản lý User
+                      </MenuItem>
+                    )}
+                    
+                    <MenuItem component={RouterLink} to="/add-document" onClick={handleCloseUserMenu}>
+                       <ListItemIcon><AccountCircleIcon fontSize="small" /></ListItemIcon>
+                       Thêm tài liệu mới
+                    </MenuItem>
+
+                    <MenuItem onClick={handleLogout}>
+                      <ListItemIcon><LogoutIcon fontSize="small" color="error" /></ListItemIcon>
+                      <Typography color="error">Đăng xuất</Typography>
+                    </MenuItem>
+                  </Menu>
+                </>
+              ) : (
+                <Button variant="contained" color="primary" component={RouterLink} to="/login" sx={{ ml: 1, px: 3, borderRadius: 5 }}>
+                  Đăng nhập
+                </Button>
+              )}
+            </Box>
+          </Toolbar>
+        </AppBar>
+
+        <Container maxWidth="lg" sx={{ mt: 4, mb: 4, minHeight: '80vh' }}>
+          <AppRoutes />
+        </Container>
+        
+        <RobokiFab />
+      </Router>
+    </ThemeProvider>
   );
 }
 

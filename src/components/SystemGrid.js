@@ -1,59 +1,118 @@
 // src/components/SystemGrid.js
-import React, { useState, useEffect } from 'react'; // Import thêm useState và useEffect
-import './SystemGrid.css';
-import { db } from '../firebase'; // Import đối tượng 'db' từ file firebase.js
-import { collection, getDocs } from 'firebase/firestore'; // Import các hàm của Firestore
+import React from 'react';
+import { Grid, Paper, Typography, Box, CardActionArea } from '@mui/material';
+import BookmarkButton from './BookmarkButton';
 
-function SystemGrid({ onSystemClick }) {
-  // 1. DÙNG STATE: Tạo một state để lưu trữ danh sách các hệ cơ quan
-  // Ban đầu, nó là một mảng rỗng
-  const [organSystems, setOrganSystems] =useState([]);
-
-  // 2. DÙNG USEEFFECT: Hook này sẽ chạy 1 lần khi component được tải
-  useEffect(() => {
-    
-    // 3. Tạo một hàm async (bất đồng bộ) để lấy dữ liệu
-    const fetchSystems = async () => {
-      console.log("SYSTEMGRID.JS: Bắt đầu lấy dữ liệu từ Firebase...");
-      
-      // Tham chiếu đến collection 'organSystems' trên Firebase
-      const systemsCollectionRef = collection(db, 'organSystems'); 
-      
-      // Lấy tất cả tài liệu (document) từ collection đó
-      const data = await getDocs(systemsCollectionRef);
-      
-      // 4. Xử lý dữ liệu trả về:
-      // Lặp qua từng 'doc' (tài liệu) và tạo một mảng đối tượng mới
-      const systemsData = data.docs.map(doc => ({
-        ...doc.data(), // Lấy tất cả dữ liệu (name, structure, description...)
-        id: doc.id,     // Thêm ID của tài liệu vào (rất quan trọng cho 'key')
-      }));
-      
-      // 5. Cập nhật state 'organSystems' bằng dữ liệu mới
-      setOrganSystems(systemsData);
-      console.log("SYSTEMGRID.JS: Đã lấy và cập nhật xong:", systemsData.length, "hệ");
-    };
-
-    fetchSystems(); // Gọi hàm để chạy
-  }, []); // Dấu ngoặc vuông [] rỗng nghĩa là "chỉ chạy 1 lần khi component tải"
-
-  // 6. HIỂN THỊ:
-  // React sẽ tự động render lại phần này khi state 'organSystems' thay đổi
+function SystemGrid({ systemConfig, onSystemClick, filteredSystems }) {
   return (
-    <div className="system-grid-container">
-      <h2>Khám phá các Hệ cơ quan</h2>
-      <div className="system-grid">
-        {organSystems.map((system) => (
-          <div
-            key={system.id} // Dùng ID từ Firebase làm key
-            className="system-card"
-            onClick={() => onSystemClick(system)} 
-          >
-            <h3>{system.name}</h3>
-          </div>
-        ))}
-      </div>
-    </div>
+    <Box sx={{ p: 1 }}>
+      <Typography 
+        variant="h5" 
+        align="center" 
+        sx={{ 
+          mb: 3, 
+          fontWeight: 'bold', 
+          color: '#2e7d32',
+          textTransform: 'uppercase',
+          letterSpacing: 1,
+          fontSize: { xs: '1.2rem', md: '1.5rem' }
+        }}
+      >
+        Khám phá các Hệ cơ quan
+      </Typography>
+
+      <Grid container spacing={2}>
+        {/* Thay đổi: Lặp qua danh sách các hệ đã được lọc */}
+        {filteredSystems.map((name) => {
+          const config = systemConfig[name];
+          if (!config) return null; // Bỏ qua nếu không tìm thấy config
+          return (
+            <Grid item xs={6} key={name}> {/* xs=6 để luôn chia 2 cột */}
+            <Paper
+              elevation={6}
+              onClick={() => onSystemClick(name)}
+              sx={{
+                height: { xs: '120px', md: '140px' }, // Chiều cao responsive
+                borderRadius: '20px', // Bo góc tròn trịa
+                background: config.gradient, // Áp dụng màu gradient
+                color: '#fff',
+                position: 'relative',
+                overflow: 'hidden',
+                transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)', // Animation mượt
+                cursor: 'pointer',
+                boxShadow: `0 8px 15px ${config.shadow}`, // Bóng màu theo thẻ
+                
+                // --- HIỆU ỨNG HOVER ---
+                '&:hover': {
+                  transform: 'translateY(-5px) scale(1.02)', // Bay lên
+                  boxShadow: `0 15px 25px ${config.shadow}`,
+                  zIndex: 2
+                }
+              }}
+            >
+              {/* Nút Bookmark */}
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  zIndex: 10,
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  borderRadius: '50%',
+                  '& .MuiIconButton-root': {
+                    color: '#1976d2'
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <BookmarkButton systemName={name} />
+              </Box>
+
+              {/* CardActionArea tạo hiệu ứng sóng nước (ripple) khi click */}
+              <CardActionArea sx={{ height: '100%', p: 1 }}>
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    height: '100%',
+                    gap: 1
+                  }}
+                >
+                  {/* Vòng tròn mờ sau icon */}
+                  <Box 
+                    sx={{ 
+                      p: 1.5, 
+                      borderRadius: '50%', 
+                      bgcolor: 'rgba(255,255,255,0.25)',
+                      backdropFilter: 'blur(4px)',
+                      display: 'flex',
+                      boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    {config.icon}
+                  </Box>
+                  
+                  <Typography 
+                    variant="h6" 
+                    align="center" 
+                    sx={{ 
+                      fontWeight: 'bold', 
+                      fontSize: { xs: '0.9rem', md: '1rem' },
+                      textShadow: '0px 2px 2px rgba(0,0,0,0.2)' 
+                    }}
+                  >
+                    {name}
+                  </Typography>
+                </Box>
+              </CardActionArea>
+            </Paper>
+          </Grid>
+          );
+        })}
+      </Grid>
+    </Box>
   );
 }
 
