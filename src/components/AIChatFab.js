@@ -19,7 +19,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import { auth, db, functions } from '../firebase';
 import { collection, addDoc, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { VERCEL_API_URL, OPENAI_API_KEY, OPENAI_MODEL, isAPIConfigured } from '../config/api';
+import { AI_SERVICE_URL, USE_AI_SERVICE, USE_FIREBASE_FUNCTIONS, VERCEL_API_URL, OPENAI_API_KEY, OPENAI_MODEL, isAPIConfigured } from '../config/api';
 
 const fabStyle = {
   position: 'fixed',
@@ -182,28 +182,58 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
 
   const fetchChatResponse = async (userMessage) => {
     try {
-      // Option 1: Sử dụng Firebase Cloud Functions (cần Blaze plan)
-      // Uncomment phần này nếu đã upgrade Firebase lên Blaze plan và đã deploy function
-      /*
-      try {
-        const chatFunction = httpsCallable(functions, 'chatWithOpenAI');
-        const result = await chatFunction({ 
-          message: userMessage, 
-          systemPrompt: SYSTEM_PROMPT 
-        });
-        
-        if (result.data.success) {
-          return result.data.response;
-        } else {
-          throw new Error('API call failed');
-        }
-      } catch (firebaseError) {
-        console.log('Firebase Functions not available, trying other methods...');
-        // Fall through to other options
-      }
-      */
+      // Option 1: Sử dụng AI Service riêng (Khuyến nghị)
+      if (USE_AI_SERVICE && AI_SERVICE_URL) {
+        try {
+          const response = await fetch(`${AI_SERVICE_URL}/api/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: userMessage,
+              systemPrompt: SYSTEM_PROMPT,
+            }),
+          });
 
-      // Option 2: Sử dụng Vercel API (Khuyến nghị - Miễn phí)
+          if (!response.ok) {
+            throw new Error('AI Service request failed');
+          }
+
+          const data = await response.json();
+          
+          if (data.success) {
+            return data.response;
+          } else {
+            throw new Error(data.error || 'AI Service error');
+          }
+        } catch (aiServiceError) {
+          console.log('AI Service not available, trying other methods...', aiServiceError);
+          // Fall through to other options
+        }
+      }
+
+      // Option 2: Sử dụng Firebase Cloud Functions
+      if (USE_FIREBASE_FUNCTIONS) {
+        try {
+          const chatFunction = httpsCallable(functions, 'chatWithOpenAI');
+          const result = await chatFunction({ 
+            message: userMessage, 
+            systemPrompt: SYSTEM_PROMPT 
+          });
+          
+          if (result.data.success) {
+            return result.data.response;
+          } else {
+            throw new Error('API call failed');
+          }
+        } catch (firebaseError) {
+          console.log('Firebase Functions not available, trying other methods...', firebaseError);
+          // Fall through to other options
+        }
+      }
+
+      // Option 3: Sử dụng Vercel API (Fallback)
       if (VERCEL_API_URL && VERCEL_API_URL !== 'YOUR_VERCEL_URL_HERE') {
         try {
           const response = await fetch(`${VERCEL_API_URL}/api/chat`, {
@@ -234,7 +264,7 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
         }
       }
 
-      // Option 3: Gọi trực tiếp OpenAI API (CHỈ DÙNG ĐỂ TEST - KHÔNG AN TOÀN)
+      // Option 4: Gọi trực tiếp OpenAI API (CHỈ DÙNG ĐỂ TEST - KHÔNG AN TOÀN)
       // ⚠️ CẢNH BÁO: Không nên expose API key trong production!
       if (OPENAI_API_KEY) {
         try {

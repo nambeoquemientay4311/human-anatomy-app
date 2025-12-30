@@ -2,11 +2,6 @@
 // Deploy this to Vercel for free OpenAI API integration
 
 export default async function handler(req, res) {
-  // Chỉ cho phép POST
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
   // Kiểm tra CORS
   const origin = req.headers.origin;
   const allowedOrigins = [
@@ -16,16 +11,25 @@ export default async function handler(req, res) {
     // Thêm domain của bạn nếu có
   ];
 
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
+  // Cho phép tất cả các nguồn (Dùng tạm để test, sau này nên đổi lại như cũ)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Hoặc giữ nguyên logic cũ nếu bạn chắc chắn về domain:
+  // if (origin && allowedOrigins.includes(origin)) {
+  //   res.setHeader('Access-Control-Allow-Origin', origin);
+  // }
 
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
 
+  // Xử lý Preflight Request (OPTIONS) trước
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  // Sau đó mới kiểm tra POST
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
@@ -90,4 +94,3 @@ export default async function handler(req, res) {
     });
   }
 }
-

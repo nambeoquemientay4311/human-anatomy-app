@@ -18,10 +18,13 @@ setGlobalOptions({
 
 // OpenAI API Cloud Function
 // LƯU Ý: Bạn cần cài đặt OpenAI package: npm install openai --save trong thư mục functions
+// Cấu hình API key: firebase functions:secrets:set OPENAI_API_KEY
 exports.chatWithOpenAI = onCall(
   {
     cors: true,
     maxInstances: 10,
+    // Sử dụng secrets (Firebase Functions v2)
+    secrets: ["OPENAI_API_KEY"],
   },
   async (request) => {
     try {
@@ -44,14 +47,15 @@ exports.chatWithOpenAI = onCall(
         };
       }
 
-      // Lấy API key từ environment variables
+      // Lấy API key từ secrets (Firebase Functions v2) hoặc environment variables
+      // Với secrets, API key sẽ được inject tự động vào process.env.OPENAI_API_KEY
       const apiKey = process.env.OPENAI_API_KEY || request.data.apiKey;
       
       if (!apiKey) {
-        logger.warn("OpenAI API key not found. Please set OPENAI_API_KEY in Firebase Functions config");
+        logger.warn("OpenAI API key not found. Please set OPENAI_API_KEY using: firebase functions:secrets:set OPENAI_API_KEY");
         return {
           success: false,
-          response: "OpenAI API key chưa được cấu hình. Vui lòng thêm API key vào Firebase Functions configuration.",
+          response: "OpenAI API key chưa được cấu hình. Vui lòng thêm API key vào Firebase Functions secrets bằng lệnh: firebase functions:secrets:set OPENAI_API_KEY",
         };
       }
 
