@@ -12,12 +12,11 @@ import LoginPage from './pages/LoginPage';
 import DocumentsPage from './pages/DocumentsPage';
 import AddDocumentPage from './pages/AddDocumentPage'; 
 import AdminUserPage from './pages/AdminUserPage';
-import AboutPage from './pages/AboutPage'; // <-- MỚI: Import trang Giới thiệu
 import MyBookmarksPage from './pages/MyBookmarksPage';
 import ProgressDashboardPage from './pages/ProgressDashboardPage';
 
 // Import Components
-import RobokiFab from './components/RobokiFab';
+import AIChatFab from './components/AIChatFab';
 import PasswordChangeForm from './components/PasswordChangeForm'; // <--- MỚI: Import Form Đổi MK
 import { getDesignTokens } from './theme'; // <--- ĐÃ SỬA: Import hàm tạo theme
 
@@ -124,7 +123,6 @@ function App() {
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
             <Route path="/" element={<HomePage />} />
-            <Route path="/about" element={<AboutPage />} />
             <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage />} />
             <Route path="/documents" element={<DocumentsPage user={user} />} />
             <Route path="/add-document" element={user ? <AddDocumentPage /> : <Navigate to="/login" />} />
@@ -184,7 +182,6 @@ function App() {
 
               <Button color="inherit" component={RouterLink} to="/">Trang chủ</Button>
               <Button color="inherit" component={RouterLink} to="/documents">Tài liệu</Button>
-              <Button color="inherit" component={RouterLink} to="/about">Giới thiệu</Button>
 
               {user ? (
                 <>
@@ -296,7 +293,7 @@ function App() {
           <AppRoutes />
         </Container>
         
-        <RobokiFab />
+        <AIChatFab />
       </Router>
     </ThemeProvider>
   );

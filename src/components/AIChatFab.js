@@ -1,0 +1,490 @@
+// src/components/AIChatFab.js
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Fab,
+  Modal,
+  Box,
+  IconButton,
+  TextField,
+  Paper,
+  Typography,
+  CircularProgress,
+  Avatar,
+  Chip
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import SendIcon from '@mui/icons-material/Send';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import PersonIcon from '@mui/icons-material/Person';
+import { auth, db, functions } from '../firebase';
+import { collection, addDoc, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { VERCEL_API_URL, OPENAI_API_KEY, OPENAI_MODEL, isAPIConfigured } from '../config/api';
+
+const fabStyle = {
+  position: 'fixed',
+  bottom: 24,
+  right: 24,
+  zIndex: 1000,
+};
+
+const modalStyle = {
+  position: 'absolute',
+  top: '50%',
+  left: '50%',
+  transform: 'translate(-50%, -50%)',
+  width: '90%',
+  maxWidth: '600px',
+  height: '80vh',
+  bgcolor: 'background.paper',
+  boxShadow: 24,
+  borderRadius: '16px',
+  display: 'flex',
+  flexDirection: 'column',
+  p: 0,
+};
+
+function AIChatFab() {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
+
+  // System prompt cho AI - tập trung vào giải phẫu học
+  const SYSTEM_PROMPT = `Bạn là một trợ lý AI chuyên về giải phẫu học và sinh học cơ thể người. 
+Bạn giúp học sinh lớp 8 học về các hệ cơ quan trong cơ thể người như:
+- Hệ Thần kinh
+- Hệ Tuần hoàn
+- Hệ Hô hấp
+- Hệ Tiêu hóa
+- Hệ Bài tiết
+- Hệ Nội tiết
+- Hệ Sinh dục
+- Hệ Vận động
+
+Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử dụng tiếng Việt.`;
+
+  useEffect(() => {
+    if (open) {
+      loadChatHistory();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const loadChatHistory = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      // Không có user, chỉ hiển thị welcome message
+      setMessages([{
+        role: 'assistant',
+        content: 'Xin chào! Tôi là trợ lý AI chuyên về giải phẫu học. Bạn có thể hỏi tôi bất kỳ điều gì về cơ thể người và các hệ cơ quan. Làm thế nào tôi có thể giúp bạn hôm nay?',
+        timestamp: new Date()
+      }]);
+      return;
+    }
+
+    try {
+      const q = query(
+        collection(db, 'aiChatHistory'),
+        where('userId', '==', user.uid),
+        orderBy('timestamp', 'desc'),
+        limit(20)
+      );
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const history = querySnapshot.docs.map(doc => doc.data())
+          .reverse(); // Reverse để có thứ tự từ cũ đến mới
+        setMessages(history);
+      } else {
+        // Welcome message nếu chưa có lịch sử
+        setMessages([{
+          role: 'assistant',
+          content: 'Xin chào! Tôi là trợ lý AI chuyên về giải phẫu học. Bạn có thể hỏi tôi bất kỳ điều gì về cơ thể người và các hệ cơ quan. Làm thế nào tôi có thể giúp bạn hôm nay?',
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      console.error('Lỗi load chat history:', error);
+      setMessages([{
+        role: 'assistant',
+        content: 'Xin chào! Tôi là trợ lý AI chuyên về giải phẫu học. Bạn có thể hỏi tôi bất kỳ điều gì về cơ thể người và các hệ cơ quan.',
+        timestamp: new Date()
+      }]);
+    }
+  };
+
+  const saveMessage = async (role, content) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, 'aiChatHistory'), {
+        userId: user.uid,
+        role,
+        content,
+        timestamp: new Date()
+      });
+    } catch (error) {
+      console.error('Lỗi lưu tin nhắn:', error);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+
+    const userMessage = {
+      role: 'user',
+      content: input.trim(),
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setLoading(true);
+    await saveMessage('user', userMessage.content);
+
+    try {
+      // Gọi OpenAI API qua proxy hoặc backend
+      // LƯU Ý: Bạn cần tạo một backend endpoint để gọi OpenAI API
+      // Hoặc sử dụng Firebase Cloud Functions
+      const response = await fetchChatResponse(userMessage.content);
+      
+      const assistantMessage = {
+        role: 'assistant',
+        content: response,
+        timestamp: new Date()
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+      await saveMessage('assistant', assistantMessage.content);
+    } catch (error) {
+      console.error('Lỗi gọi AI:', error);
+      const errorMessage = {
+        role: 'assistant',
+        content: 'Xin lỗi, có lỗi xảy ra khi kết nối với AI. Vui lòng thử lại sau.',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchChatResponse = async (userMessage) => {
+    try {
+      // Option 1: Sử dụng Firebase Cloud Functions (cần Blaze plan)
+      // Uncomment phần này nếu đã upgrade Firebase lên Blaze plan và đã deploy function
+      /*
+      try {
+        const chatFunction = httpsCallable(functions, 'chatWithOpenAI');
+        const result = await chatFunction({ 
+          message: userMessage, 
+          systemPrompt: SYSTEM_PROMPT 
+        });
+        
+        if (result.data.success) {
+          return result.data.response;
+        } else {
+          throw new Error('API call failed');
+        }
+      } catch (firebaseError) {
+        console.log('Firebase Functions not available, trying other methods...');
+        // Fall through to other options
+      }
+      */
+
+      // Option 2: Sử dụng Vercel API (Khuyến nghị - Miễn phí)
+      if (VERCEL_API_URL && VERCEL_API_URL !== 'YOUR_VERCEL_URL_HERE') {
+        try {
+          const response = await fetch(`${VERCEL_API_URL}/api/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: userMessage,
+              systemPrompt: SYSTEM_PROMPT,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('API request failed');
+          }
+
+          const data = await response.json();
+          
+          if (data.success) {
+            return data.response;
+          } else {
+            throw new Error(data.error || 'Unknown error');
+          }
+        } catch (vercelError) {
+          console.error('Vercel API error:', vercelError);
+          // Fall through to direct API call
+        }
+      }
+
+      // Option 3: Gọi trực tiếp OpenAI API (CHỈ DÙNG ĐỂ TEST - KHÔNG AN TOÀN)
+      // ⚠️ CẢNH BÁO: Không nên expose API key trong production!
+      if (OPENAI_API_KEY) {
+        try {
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: OPENAI_MODEL,
+              messages: [
+                {
+                  role: 'system',
+                  content: SYSTEM_PROMPT,
+                },
+                {
+                  role: 'user',
+                  content: userMessage,
+                },
+              ],
+              temperature: 0.7,
+              max_tokens: 1000,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || 'OpenAI API error');
+          }
+
+          const data = await response.json();
+          return data.choices[0]?.message?.content || 'Không nhận được phản hồi từ AI';
+        } catch (openaiError) {
+          console.error('OpenAI API error:', openaiError);
+          // Fall through to mock response
+        }
+      }
+
+      // Fallback: Mock response nếu chưa cấu hình API
+      console.warn('⚠️ Chưa cấu hình API. Đang sử dụng mock response. Vui lòng cấu hình Vercel URL hoặc OpenAI API key.');
+      return mockAIResponse(userMessage);
+    } catch (error) {
+      console.error('Error calling AI API:', error);
+      // Fallback to mock response
+      return mockAIResponse(userMessage);
+    }
+  };
+
+  // Mock response - THAY THẾ BẰNG GỌI OPENAI THẬT
+  const mockAIResponse = async (userMessage) => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const lowerMessage = userMessage.toLowerCase();
+    
+    if (lowerMessage.includes('thần kinh')) {
+      return 'Hệ thần kinh là hệ thống điều khiển và điều phối các hoạt động của cơ thể. Nó bao gồm não, tủy sống và các dây thần kinh. Hệ thần kinh được chia thành hệ thần kinh trung ương (não và tủy sống) và hệ thần kinh ngoại biên (các dây thần kinh).';
+    } else if (lowerMessage.includes('tuần hoàn') || lowerMessage.includes('tim')) {
+      return 'Hệ tuần hoàn bao gồm tim, mạch máu và máu. Tim bơm máu đến tất cả các bộ phận của cơ thể thông qua động mạch, và máu trở về tim qua tĩnh mạch. Máu vận chuyển oxy, chất dinh dưỡng và các chất thải.';
+    } else if (lowerMessage.includes('hô hấp') || lowerMessage.includes('phổi')) {
+      return 'Hệ hô hấp bao gồm mũi, khí quản, phế quản và phổi. Nó có chức năng trao đổi khí - lấy oxy vào cơ thể và thải carbon dioxide ra ngoài. Phổi là cơ quan chính thực hiện quá trình này.';
+    } else if (lowerMessage.includes('tiêu hóa')) {
+      return 'Hệ tiêu hóa bao gồm miệng, thực quản, dạ dày, ruột non, ruột già và các cơ quan phụ như gan, tụy. Nó có chức năng tiêu hóa thức ăn, hấp thu chất dinh dưỡng và thải chất thải.';
+    } else {
+      return `Cảm ơn bạn đã hỏi về "${userMessage}". Đây là một câu hỏi thú vị về giải phẫu học. Để tôi có thể trả lời chính xác hơn, bạn có thể mô tả cụ thể hơn về hệ cơ quan nào bạn muốn tìm hiểu không?`;
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleOpen = () => {
+    setOpen(true);
+  };
+
+  const handleClose = () => {
+    setOpen(false);
+  };
+
+  return (
+    <>
+      {/* FAB Button */}
+      <Fab 
+        color="primary" 
+        sx={fabStyle} 
+        onClick={handleOpen}
+        aria-label="AI Chat"
+      >
+        <SmartToyIcon />
+      </Fab>
+
+      {/* Chat Modal */}
+      <Modal
+        open={open}
+        onClose={handleClose}
+        aria-labelledby="ai-chat-modal"
+      >
+        <Box sx={modalStyle}>
+          {/* Header */}
+          <Box
+            sx={{
+              p: 2,
+              borderBottom: 1,
+              borderColor: 'divider',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              bgcolor: 'primary.main',
+              color: 'white',
+              borderRadius: '16px 16px 0 0'
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
+                <SmartToyIcon />
+              </Avatar>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  AI Trợ lý Giải phẫu học
+                </Typography>
+                <Typography variant="caption">
+                  Hỏi tôi bất kỳ điều gì về cơ thể người
+                </Typography>
+              </Box>
+            </Box>
+            <IconButton onClick={handleClose} sx={{ color: 'white' }}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+
+          {/* Messages Container */}
+          <Box
+            ref={chatContainerRef}
+            sx={{
+              flexGrow: 1,
+              overflowY: 'auto',
+              p: 2,
+              bgcolor: 'grey.50',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2
+            }}
+          >
+            {messages.map((msg, index) => (
+              <Box
+                key={index}
+                sx={{
+                  display: 'flex',
+                  justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  gap: 1
+                }}
+              >
+                {msg.role === 'assistant' && (
+                  <Avatar sx={{ bgcolor: 'primary.main', width: 32, height: 32 }}>
+                    <SmartToyIcon sx={{ fontSize: 20 }} />
+                  </Avatar>
+                )}
+                <Paper
+                  elevation={1}
+                  sx={{
+                    p: 1.5,
+                    maxWidth: '75%',
+                    bgcolor: msg.role === 'user' ? 'primary.main' : 'white',
+                    color: msg.role === 'user' ? 'white' : 'text.primary',
+                    borderRadius: 2
+                  }}
+                >
+                  <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {msg.content}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: 'block',
+                      mt: 0.5,
+                      opacity: 0.7,
+                      fontSize: '0.7rem'
+                    }}
+                  >
+                    {msg.timestamp?.toLocaleTimeString('vi-VN', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </Typography>
+                </Paper>
+                {msg.role === 'user' && (
+                  <Avatar sx={{ bgcolor: 'secondary.main', width: 32, height: 32 }}>
+                    <PersonIcon sx={{ fontSize: 20 }} />
+                  </Avatar>
+                )}
+              </Box>
+            ))}
+            
+            {loading && (
+              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-start' }}>
+                <Avatar sx={{ bgcolor: 'primary.main', width: 32, height: 32 }}>
+                  <SmartToyIcon sx={{ fontSize: 20 }} />
+                </Avatar>
+                <Paper elevation={1} sx={{ p: 1.5, bgcolor: 'white' }}>
+                  <CircularProgress size={16} />
+                </Paper>
+              </Box>
+            )}
+            
+            <div ref={messagesEndRef} />
+          </Box>
+
+          {/* Input Area */}
+          <Box
+            sx={{
+              p: 2,
+              borderTop: 1,
+              borderColor: 'divider',
+              bgcolor: 'white',
+              borderRadius: '0 0 16px 16px'
+            }}
+          >
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <TextField
+                fullWidth
+                multiline
+                maxRows={4}
+                placeholder="Nhập câu hỏi của bạn..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                disabled={loading}
+                variant="outlined"
+                size="small"
+              />
+              <IconButton
+                color="primary"
+                onClick={handleSend}
+                disabled={!input.trim() || loading}
+                sx={{ bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' } }}
+              >
+                <SendIcon />
+              </IconButton>
+            </Box>
+          </Box>
+        </Box>
+      </Modal>
+    </>
+  );
+}
+
+export default AIChatFab;
+

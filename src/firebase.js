@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAuth } from "firebase/auth";
+import { getFunctions } from "firebase/functions";
 
 // ======================================================
 // DÁN CẤU HÌNH BẠN SAO CHÉP TỪ FIREBASE VÀO ĐÂY
@@ -24,6 +25,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const auth = getAuth(app);
+const functions = getFunctions(app);
 
 // Xuất các dịch vụ để sử dụng
-export { db, storage, auth };
+export { db, storage, auth, functions };
