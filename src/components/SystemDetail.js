@@ -175,7 +175,7 @@ const SystemDetail = React.forwardRef(({ system, onBack }, ref) => {
     setTabValue(newValue);
   };
 
-  const handleToggleAudio = (textToRead, specificAudioUrl) => {
+  const handleToggleAudio = async (textToRead, specificAudioUrl) => {
     // Nếu đang phát thì bấm lần nữa là Dừng
     if (isPlaying) {
       stopAllAudio();
@@ -195,11 +195,16 @@ const SystemDetail = React.forwardRef(({ system, onBack }, ref) => {
             audioRef.current.src !== finalAudioUrl) {
            audioRef.current.src = finalAudioUrl;
         }
-        
-        audioRef.current.play().catch(e => {
+
+        try {
+          await audioRef.current.play();
+        } catch (e) {
+          // This error is expected if the user interrupts playback.
+          if (e.name !== 'AbortError') {
             console.error("Lỗi phát audio:", e);
             setIsPlaying(false);
-        });
+          }
+        }
         audioRef.current.onended = () => setIsPlaying(false);
       }
     } else {

@@ -1,96 +1,90 @@
-// api/chat.js - Vercel Serverless Function
-// Deploy this to Vercel for free OpenAI API integration
+/**
+ * Vercel Serverless Function - Chat API using Google Gemini
+ * File này để deploy lên Vercel dạng serverless function
+ */
+
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export default async function handler(req, res) {
-  // Kiểm tra CORS
-  const origin = req.headers.origin;
-  const allowedOrigins = [
-    'http://localhost:3000',
-    'https://human-anatomy-app-4483b.web.app',
-    'https://human-anatomy-app-4483b.firebaseapp.com',
-    // Thêm domain của bạn nếu có
-  ];
-
-  // Cho phép tất cả các nguồn (Dùng tạm để test, sau này nên đổi lại như cũ)
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  // Hoặc giữ nguyên logic cũ nếu bạn chắc chắn về domain:
-  // if (origin && allowedOrigins.includes(origin)) {
-  //   res.setHeader('Access-Control-Allow-Origin', origin);
-  // }
-
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Max-Age', '86400');
-
-  // Xử lý Preflight Request (OPTIONS) trước
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  // Sau đó mới kiểm tra POST
+  // Chỉ cho phép POST
   if (req.method !== 'POST') {
+    // Handling OPTIONS for preflight
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Origin', '*'); // Hoặc domain của bạn
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      return res.status(200).end();
+    }
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // CORS handling for POST
+  // Note: Vercel's vercel.json is a better place for these headers
+  res.setHeader('Access-Control-Allow-Origin', '*'); // Hoặc domain của bạn
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   try {
-    const { message, systemPrompt } = req.body;
+    const { message, systemPrompt, model, temperature, maxTokens } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
     // Lấy API key từ environment variable
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ 
-        error: 'OpenAI API key not configured',
-        message: 'Vui lòng cấu hình OPENAI_API_KEY trong Vercel environment variables'
+      return res.status(500).json({
+        error: 'Gemini API key not configured',
+        message: 'Vui lòng cấu hình GEMINI_API_KEY trong Vercel environment variables'
       });
     }
 
-    // Gọi OpenAI API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini', // Hoặc 'gpt-3.5-turbo' để tiết kiệm hơn
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt || 'Bạn là một trợ lý AI chuyên về giải phẫu học và sinh học cơ thể người. Trả lời bằng tiếng Việt một cách dễ hiểu và chính xác.',
-          },
-          {
-            role: 'user',
-            content: message,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 1000,
-      }),
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    // Default system prompt
+    const defaultSystemPrompt = `Bạn là một trợ lý AI chuyên về giải phẫu học và sinh học cơ thể người. 
+Bạn giúp học sinh lớp 8 học về các hệ cơ quan trong cơ thể người như:
+- Hệ Thần kinh
+- Hệ Tuần hoàn
+- Hệ Hô hấp
+- Hệ Tiêu hóa
+- Hệ Bài tiết
+- Hệ Nội tiết
+- Hệ Sinh dục
+- Hệ Vận động
+
+Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử dụng tiếng Việt.`;
+    
+    const fullPrompt = (systemPrompt || defaultSystemPrompt) + "\n\n" + message;
+
+    // For text-only input, use the gemini-pro model
+    const geminiModel = genAI.getGenerativeModel({
+        model: model || "gemini-pro",
+        generationConfig: {
+            temperature: temperature || 0.7,
+            maxOutputTokens: maxTokens || 1000,
+        }
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'OpenAI API error');
-    }
-
-    const data = await response.json();
-    const aiResponse = data.choices[0]?.message?.content || 'Không nhận được phản hồi từ AI';
+    const result = await geminiModel.generateContent(fullPrompt);
+    const response = await result.response;
+    const aiResponse = response.text();
 
     return res.status(200).json({
       success: true,
       response: aiResponse,
+      model: model || "gemini-pro" // Return the model name used
     });
+
   } catch (error) {
     console.error('Error in chat API:', error);
+    
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error',
-      response: 'Xin lỗi, có lỗi xảy ra khi kết nối với AI. Vui lòng thử lại sau.',
+      response: 'Xin lỗi, có lỗi xảy ra khi kết nối với AI. Vui lòng thử lại sau.'
     });
   }
 }
