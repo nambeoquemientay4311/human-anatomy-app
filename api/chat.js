@@ -8,21 +8,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export default async function handler(req, res) {
   // Chỉ cho phép POST
   if (req.method !== 'POST') {
-    // Handling OPTIONS for preflight
-    if (req.method === 'OPTIONS') {
-      res.setHeader('Access-Control-Allow-Origin', '*'); // Hoặc domain của bạn
-      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-      return res.status(200).end();
-    }
     return res.status(405).json({ error: 'Method not allowed' });
   }
-
-  // CORS handling for POST
-  // Note: Vercel's vercel.json is a better place for these headers
-  res.setHeader('Access-Control-Allow-Origin', '*'); // Hoặc domain của bạn
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   try {
     const { message, systemPrompt, model, temperature, maxTokens } = req.body;

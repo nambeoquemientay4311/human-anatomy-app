@@ -1,5 +1,27 @@
 {
-  // This file is intentionally left mostly empty to avoid conflicts with
-  // the serverless function configuration defined in the /api directory.
-  // Vercel will automatically handle functions in the /api directory.
+  "version": 2,
+  "functions": {
+    "api/chat.js": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/chat",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ]
 }
