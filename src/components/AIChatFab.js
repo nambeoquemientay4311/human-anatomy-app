@@ -10,6 +10,8 @@ import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import QuizIcon from '@mui/icons-material/Quiz';
 import StyleIcon from '@mui/icons-material/Style'; // Flashcard icon
+import MicIcon from '@mui/icons-material/Mic';
+import DownloadIcon from '@mui/icons-material/Download';
 import { auth, db } from '../firebase';
 import { collection, addDoc, query, where, orderBy, getDocs, limit, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 import { AI_SERVICE_URL, USE_AI_SERVICE, USE_FIREBASE_FUNCTIONS, VERCEL_API_URL, OPENAI_API_KEY, OPENAI_MODEL, isAPIConfigured } from '../config/api';
@@ -43,6 +45,7 @@ function AIChatFab() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
 
@@ -58,7 +61,8 @@ Bạn giúp học sinh lớp 8 học về các hệ cơ quan trong cơ thể ng�
 - Hệ Sinh dục
 - Hệ Vận động
 
-Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử dụng tiếng Việt.`;
+Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử dụng tiếng Việt.
+Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ khóa quan trọng để học sinh dễ nhớ.`;
 
   useEffect(() => {
     if (open) {
@@ -366,6 +370,57 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
     setInput(prompts[type]);
   };
 
+  // 5. Nhập liệu bằng giọng nói (Voice Input)
+  const handleVoiceInput = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      alert("Trình duyệt của bạn không hỗ trợ tính năng nhận diện giọng nói.");
+      return;
+    }
+
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'vi-VN'; // Thiết lập tiếng Việt
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsListening(true);
+    
+    recognition.onend = () => setIsListening(false);
+    
+    recognition.onerror = (event) => {
+      console.error("Lỗi nhận diện giọng nói:", event.error);
+      setIsListening(false);
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      // Thêm nội dung nói vào ô nhập liệu hiện tại
+      setInput(prev => prev + (prev ? ' ' : '') + transcript);
+    };
+
+    recognition.start();
+  };
+
+  // 6. Xuất lịch sử chat (Export)
+  const handleExportChat = () => {
+    if (messages.length === 0) return;
+    const content = messages.map(m => `[${m.role.toUpperCase()} - ${new Date(m.timestamp).toLocaleString('vi-VN')}]\n${m.content}\n`).join('\n-------------------\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `chat-history-${Date.now()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <>
       {/* FAB Button */}
@@ -413,6 +468,9 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
               </Box>
             </Box>
             <Box>
+              <IconButton onClick={handleExportChat} sx={{ color: 'white' }} title="Tải xuống lịch sử chat">
+                <DownloadIcon />
+              </IconButton>
               <IconButton onClick={handleClearChat} sx={{ color: 'white' }} title="Xóa toàn bộ cuộc trò chuyện">
                 <DeleteSweepIcon />
               </IconButton>
@@ -573,6 +631,14 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
                 variant="outlined"
                 size="small"
               />
+              <IconButton
+                color={isListening ? "secondary" : "default"}
+                onClick={handleVoiceInput}
+                sx={{ bgcolor: isListening ? 'secondary.light' : 'grey.100', '&:hover': { bgcolor: isListening ? 'secondary.main' : 'grey.200' } }}
+                title="Nhập bằng giọng nói"
+              >
+                <MicIcon color={isListening ? "error" : "inherit"} />
+              </IconButton>
               <IconButton
                 color="primary"
                 onClick={handleSend}
