@@ -63,7 +63,7 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
 
     // For text-only input, use a current Gemini model
     const geminiModel = genAI.getGenerativeModel({
-        model: model || "gemini-1.5-flash-latest",
+        model: model || "gemini-flash-latest",
         generationConfig: {
             temperature: temperature || 0.7,
             maxOutputTokens: maxTokens || 1000,
@@ -77,7 +77,7 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
     return res.status(200).json({
       success: true,
       response: aiResponse, // Return the model name used
-      model: model || "gemini-1.5-flash-latest"
+      model: model || "gemini-flash-latest"
     });
 
   } catch (error) {
