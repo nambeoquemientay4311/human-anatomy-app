@@ -16,9 +16,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PersonIcon from '@mui/icons-material/Person';
-import { auth, db, functions } from '../firebase';
+import { auth, db } from '../firebase';
 import { collection, addDoc, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
 import { AI_SERVICE_URL, USE_AI_SERVICE, USE_FIREBASE_FUNCTIONS, VERCEL_API_URL, OPENAI_API_KEY, OPENAI_MODEL, isAPIConfigured } from '../config/api';
 
 const fabStyle = {
@@ -181,137 +180,68 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
   };
 
   const fetchChatResponse = async (userMessage) => {
-    try {
-      // Option 1: Sử dụng AI Service riêng (Khuyến nghị)
-      if (USE_AI_SERVICE && AI_SERVICE_URL) {
-        try {
-          const response = await fetch(`${AI_SERVICE_URL}/api/chat`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              message: userMessage,
-              systemPrompt: SYSTEM_PROMPT,
-            }),
-          });
+    // Ưu tiên 1: Gọi Vercel API. Nếu có lỗi, nó sẽ được `handleSend` bắt và hiển thị trong UI.
+    if (VERCEL_API_URL) {
+      const response = await fetch(`${VERCEL_API_URL}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage,
+          systemPrompt: SYSTEM_PROMPT,
+        }),
+      });
 
-          if (!response.ok) {
-            throw new Error('AI Service request failed');
-          }
-
-          const data = await response.json();
-          
-          if (data.success) {
-            return data.response;
-          } else {
-            throw new Error(data.error || 'AI Service error');
-          }
-        } catch (aiServiceError) {
-          console.log('AI Service not available, trying other methods...', aiServiceError);
-          // Fall through to other options
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || `API request failed with status ${response.status}`);
       }
 
-      // Option 2: Sử dụng Firebase Cloud Functions
-      if (USE_FIREBASE_FUNCTIONS) {
-        try {
-          const chatFunction = httpsCallable(functions, 'chatWithOpenAI');
-          const result = await chatFunction({ 
-            message: userMessage, 
-            systemPrompt: SYSTEM_PROMPT 
-          });
-          
-          if (result.data.success) {
-            return result.data.response;
-          } else {
-            throw new Error('API call failed');
-          }
-        } catch (firebaseError) {
-          console.log('Firebase Functions not available, trying other methods...', firebaseError);
-          // Fall through to other options
-        }
+      const data = await response.json();
+      if (data.success) {
+        return data.response;
+      } else {
+        throw new Error(data.error || 'Unknown Vercel API error');
       }
-
-      // Option 3: Sử dụng Vercel API (Fallback)
-      if (VERCEL_API_URL && VERCEL_API_URL !== 'YOUR_VERCEL_URL_HERE') {
-        try {
-          const response = await fetch(`${VERCEL_API_URL}/api/chat`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              message: userMessage,
-              systemPrompt: SYSTEM_PROMPT,
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error('API request failed');
-          }
-
-          const data = await response.json();
-          
-          if (data.success) {
-            return data.response;
-          } else {
-            throw new Error(data.error || 'Unknown error');
-          }
-        } catch (vercelError) {
-          console.error('Vercel API error:', vercelError);
-          // Fall through to direct API call
-        }
-      }
-
-      // Option 4: Gọi trực tiếp OpenAI API (CHỈ DÙNG ĐỂ TEST - KHÔNG AN TOÀN)
-      // ⚠️ CẢNH BÁO: Không nên expose API key trong production!
-      if (OPENAI_API_KEY) {
-        try {
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            },
-            body: JSON.stringify({
-              model: OPENAI_MODEL,
-              messages: [
-                {
-                  role: 'system',
-                  content: SYSTEM_PROMPT,
-                },
-                {
-                  role: 'user',
-                  content: userMessage,
-                },
-              ],
-              temperature: 0.7,
-              max_tokens: 1000,
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'OpenAI API error');
-          }
-
-          const data = await response.json();
-          return data.choices[0]?.message?.content || 'Không nhận được phản hồi từ AI';
-        } catch (openaiError) {
-          console.error('OpenAI API error:', openaiError);
-          // Fall through to mock response
-        }
-      }
-
-      // Fallback: Mock response nếu chưa cấu hình API
-      console.warn('⚠️ Chưa cấu hình API. Đang sử dụng mock response. Vui lòng cấu hình Vercel URL hoặc OpenAI API key.');
-      return mockAIResponse(userMessage);
-    } catch (error) {
-      console.error('Error calling AI API:', error);
-      // Fallback to mock response
-      return mockAIResponse(userMessage);
     }
+
+    // Ưu tiên 2: Gọi trực tiếp OpenAI API (chỉ để test local, không an toàn)
+    if (OPENAI_API_KEY) {
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: OPENAI_MODEL,
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: userMessage },
+            ],
+            temperature: 0.7,
+            max_tokens: 1000,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || 'OpenAI API error');
+        }
+
+        const data = await response.json();
+        return data.choices[0]?.message?.content || 'Không nhận được phản hồi từ AI';
+      } catch (openaiError) {
+        console.error('OpenAI API error (direct call):', openaiError);
+        // Nếu lỗi, sẽ tự động rơi xuống fallback cuối cùng
+      }
+    }
+
+    // Fallback cuối cùng: Mock response nếu không có API nào được cấu hình hoặc tất cả đều lỗi
+    console.warn('⚠️ API chưa được cấu hình hoặc đã xảy ra lỗi. Đang sử dụng mock response.');
+    return mockAIResponse(userMessage);
   };
 
   // Mock response - THAY THẾ BẰNG GỌI OPENAI THẬT
@@ -517,4 +447,3 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
 }
 
 export default AIChatFab;
-
