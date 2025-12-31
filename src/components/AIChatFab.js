@@ -1,23 +1,17 @@
 // src/components/AIChatFab.js
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  Fab,
-  Modal,
-  Box,
-  IconButton,
-  TextField,
-  Paper,
-  Typography,
-  CircularProgress,
-  Avatar,
-  Chip
-} from '@mui/material';
+import { Fab, Modal, Box, IconButton, TextField, Paper, Typography, CircularProgress, Avatar, Chip } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PersonIcon from '@mui/icons-material/Person';
+import DeleteIcon from '@mui/icons-material/Delete';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import QuizIcon from '@mui/icons-material/Quiz';
+import StyleIcon from '@mui/icons-material/Style'; // Flashcard icon
 import { auth, db } from '../firebase';
-import { collection, addDoc, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
+import { collection, addDoc, query, where, orderBy, getDocs, limit, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 import { AI_SERVICE_URL, USE_AI_SERVICE, USE_FIREBASE_FUNCTIONS, VERCEL_API_URL, OPENAI_API_KEY, OPENAI_MODEL, isAPIConfigured } from '../config/api';
 
 const fabStyle = {
@@ -48,6 +42,7 @@ function AIChatFab() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
 
@@ -107,7 +102,7 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
           if (data.timestamp && typeof data.timestamp.toDate === 'function') {
             data.timestamp = data.timestamp.toDate();
           }
-          return data;
+          return { id: doc.id, ...data };
         }).reverse(); // Reverse để có thứ tự từ cũ đến mới
         setMessages(history);
       } else {
@@ -133,14 +128,16 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
     if (!user) return;
 
     try {
-      await addDoc(collection(db, 'aiChatHistory'), {
+      const docRef = await addDoc(collection(db, 'aiChatHistory'), {
         userId: user.uid,
         role,
         content,
         timestamp: new Date()
       });
+      return docRef.id;
     } catch (error) {
       console.error('Lỗi lưu tin nhắn:', error);
+      return null;
     }
   };
 
@@ -153,10 +150,19 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    // Tạm thời thêm vào UI với ID tạm thời để có key
+    const tempUserMessage = { ...userMessage, id: `temp-user-${Date.now()}` };
+    setMessages(prev => [...prev, tempUserMessage]);
     setInput('');
     setLoading(true);
-    await saveMessage('user', userMessage.content);
+    
+    const userMsgId = await saveMessage('user', userMessage.content);
+    // Cập nhật lại tin nhắn của user với ID thật từ Firebase
+    if (userMsgId) {
+      setMessages(prev => prev.map(msg => 
+        msg.id === tempUserMessage.id ? { ...msg, id: userMsgId } : msg
+      ));
+    }
 
     try {
       // Gọi OpenAI API qua proxy hoặc backend
@@ -170,8 +176,10 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
         timestamp: new Date()
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
-      await saveMessage('assistant', assistantMessage.content);
+      const assistantMsgId = await saveMessage('assistant', assistantMessage.content);
+      // Thêm tin nhắn của AI với ID thật
+      const finalAssistantMessage = { ...assistantMessage, id: assistantMsgId };
+      setMessages(prev => [...prev, finalAssistantMessage]);
     } catch (error) {
       console.error('Lỗi gọi AI:', error);
       const errorMessage = {
@@ -287,6 +295,77 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
     setOpen(false);
   };
 
+  // --- CÁC TÍNH NĂNG MỚI ---
+
+  // 1. Xóa một tin nhắn
+  const handleDeleteMessage = async (messageId) => {
+    if (!messageId || messageId.startsWith('temp-')) return;
+    try {
+      await deleteDoc(doc(db, 'aiChatHistory', messageId));
+      setMessages(prev => prev.filter(msg => msg.id !== messageId));
+    } catch (error) {
+      console.error("Lỗi xóa tin nhắn:", error);
+    }
+  };
+
+  // 2. Xóa toàn bộ lịch sử chat
+  const handleClearChat = async () => {
+    if (!window.confirm("Bạn có chắc muốn xóa toàn bộ lịch sử chat không? Hành động này không thể hoàn tác.")) return;
+    const user = auth.currentUser;
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const q = query(collection(db, 'aiChatHistory'), where('userId', '==', user.uid));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) return;
+
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+
+      setMessages([{
+        role: 'assistant',
+        content: 'Lịch sử chat đã được xóa. Tôi có thể giúp gì cho bạn?',
+        timestamp: new Date()
+      }]);
+    } catch (error) {
+      console.error("Lỗi xóa lịch sử chat:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 3. Text-to-Speech (Đọc tin nhắn)
+  const handleSpeak = (text) => {
+    if ('speechSynthesis' in window) {
+      if (isSpeaking) {
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'vi-VN'; // Đảm bảo đọc tiếng Việt
+      utterance.onend = () => setIsSpeaking(false);
+      setIsSpeaking(true);
+      window.speechSynthesis.speak(utterance);
+    } else {
+      alert("Trình duyệt của bạn không hỗ trợ tính năng đọc văn bản.");
+    }
+  };
+
+  // 4. Tạo Quiz hoặc Flashcard nhanh
+  const handleQuickAction = (type) => {
+    const prompts = {
+      quiz: "Tạo 5 câu hỏi trắc nghiệm về [TÊN HỆ CƠ QUAN] với 4 đáp án và giải thích đáp án đúng.",
+      flashcard: "Tạo 5 flashcard về [TÊN HỆ CƠ QUAN] theo định dạng: 'Thuật ngữ: ... - Định nghĩa: ...'"
+    };
+    setInput(prompts[type]);
+  };
+
   return (
     <>
       {/* FAB Button */}
@@ -333,9 +412,14 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
                 </Typography>
               </Box>
             </Box>
-            <IconButton onClick={handleClose} sx={{ color: 'white' }}>
-              <CloseIcon />
-            </IconButton>
+            <Box>
+              <IconButton onClick={handleClearChat} sx={{ color: 'white' }} title="Xóa toàn bộ cuộc trò chuyện">
+                <DeleteSweepIcon />
+              </IconButton>
+              <IconButton onClick={handleClose} sx={{ color: 'white' }}>
+                <CloseIcon />
+              </IconButton>
+            </Box>
           </Box>
 
           {/* Messages Container */}
@@ -353,7 +437,7 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
           >
             {messages.map((msg, index) => (
               <Box
-                key={index}
+                key={msg.id || index}
                 sx={{
                   display: 'flex',
                   justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
@@ -372,12 +456,41 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
                     maxWidth: '75%',
                     bgcolor: msg.role === 'user' ? 'primary.main' : 'white',
                     color: msg.role === 'user' ? 'white' : 'text.primary',
-                    borderRadius: 2
+                    borderRadius: 2,
+                    position: 'relative',
+                    '&:hover .message-actions': {
+                      opacity: 1,
+                    }
                   }}
                 >
                   <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
                     {msg.content}
                   </Typography>
+                  <Box 
+                    className="message-actions"
+                    sx={{ 
+                      position: 'absolute', 
+                      top: -12, 
+                      right: msg.role === 'user' ? 'auto' : -12,
+                      left: msg.role === 'user' ? -12 : 'auto',
+                      display: 'flex',
+                      gap: 0.5,
+                      opacity: 0,
+                      transition: 'opacity 0.2s',
+                      bgcolor: 'background.paper',
+                      borderRadius: '50px',
+                      boxShadow: 1,
+                    }}
+                  >
+                    {msg.role === 'assistant' && (
+                      <IconButton size="small" onClick={() => handleSpeak(msg.content)} title={isSpeaking ? "Dừng đọc" : "Đọc to"}>
+                        <VolumeUpIcon fontSize="inherit" color={isSpeaking ? "secondary" : "action"} />
+                      </IconButton>
+                    )}
+                    <IconButton size="small" onClick={() => handleDeleteMessage(msg.id)} title="Xóa tin nhắn">
+                      <DeleteIcon fontSize="inherit" color="error" />
+                    </IconButton>
+                  </Box>
                   <Typography
                     variant="caption"
                     sx={{
@@ -413,6 +526,28 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
             )}
             
             <div ref={messagesEndRef} />
+          </Box>
+
+          {/* Quick Actions */}
+          <Box sx={{ p: 1, borderTop: 1, borderColor: 'divider', bgcolor: 'white', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+             <Chip 
+              icon={<QuizIcon />} 
+              label="Tạo Quiz" 
+              onClick={() => handleQuickAction('quiz')}
+              size="small"
+              color="primary"
+              variant="outlined"
+              clickable
+            />
+            <Chip 
+              icon={<StyleIcon />} 
+              label="Tạo Flashcard" 
+              onClick={() => handleQuickAction('flashcard')}
+              size="small"
+              color="secondary"
+              variant="outlined"
+              clickable
+            />
           </Box>
 
           {/* Input Area */}
