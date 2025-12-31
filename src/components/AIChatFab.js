@@ -101,8 +101,14 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
       const querySnapshot = await getDocs(q);
       
       if (!querySnapshot.empty) {
-        const history = querySnapshot.docs.map(doc => doc.data())
-          .reverse(); // Reverse để có thứ tự từ cũ đến mới
+        const history = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          // Firestore trả về đối tượng Timestamp, chúng ta cần đổi nó thành JS Date
+          if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+            data.timestamp = data.timestamp.toDate();
+          }
+          return data;
+        }).reverse(); // Reverse để có thứ tự từ cũ đến mới
         setMessages(history);
       } else {
         // Welcome message nếu chưa có lịch sử
