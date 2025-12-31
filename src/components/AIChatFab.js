@@ -182,7 +182,9 @@ Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử d�
   const fetchChatResponse = async (userMessage) => {
     // Ưu tiên 1: Gọi Vercel API. Nếu có lỗi, nó sẽ được `handleSend` bắt và hiển thị trong UI.
     if (VERCEL_API_URL) {
-      const response = await fetch(`${VERCEL_API_URL}/api/chat`, {
+      // Loại bỏ dấu / ở cuối VERCEL_API_URL nếu có để tránh thành //api/chat
+      const baseUrl = VERCEL_API_URL.endsWith('/') ? VERCEL_API_URL.slice(0, -1) : VERCEL_API_URL;
+      const response = await fetch(`${baseUrl}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
