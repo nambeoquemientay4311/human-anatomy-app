@@ -1,8 +1,13 @@
 // src/components/AIChatFab.js
 import React, { useState, useRef, useEffect } from 'react';
-import { Fab, Modal, Box, IconButton, TextField, Paper, Typography, CircularProgress, Avatar, Chip } from '@mui/material';
+import { 
+  Fab, Modal, Box, IconButton, TextField, Paper, Typography, 
+  CircularProgress, Avatar, Chip, Drawer, List, ListItem, 
+  ListItemButton, ListItemText, Divider, useTheme 
+} from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import SendIcon from '@mui/icons-material/Send';
+import MenuIcon from '@mui/icons-material/Menu';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PersonIcon from '@mui/icons-material/Person';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -14,7 +19,7 @@ import MicIcon from '@mui/icons-material/Mic';
 import DownloadIcon from '@mui/icons-material/Download';
 import { auth, db } from '../firebase';
 import { collection, addDoc, query, where, orderBy, getDocs, limit, deleteDoc, doc, writeBatch } from 'firebase/firestore';
-import { AI_SERVICE_URL, USE_AI_SERVICE, USE_FIREBASE_FUNCTIONS, VERCEL_API_URL, OPENAI_API_KEY, OPENAI_MODEL, isAPIConfigured } from '../config/api';
+import { VERCEL_API_URL, OPENAI_API_KEY, OPENAI_MODEL, GEMINI_API_KEY, GEMINI_MODEL } from '../config/api';
 
 const fabStyle = {
   position: 'fixed',
@@ -40,7 +45,9 @@ const modalStyle = {
 };
 
 function AIChatFab() {
+  const theme = useTheme();
   const [open, setOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -49,9 +56,20 @@ function AIChatFab() {
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
 
+  // *** CẤU HÌNH GEMINI RAG ***
+  // Dán File URI bạn đã upload lên Google AI Studio vào đây
+  const GEMINI_FILE_URI = "https://generativelanguage.googleapis.com/v1beta/files/a42mgd9k2tjj"; // <-- DÁN URI BẠN VỪA COPY VÀO ĐÂY
+  const GEMINI_FILE_MIME_TYPE = "application/pdf"; // Đổi nếu là file khác
+
   // System prompt cho AI - tập trung vào giải phẫu học
-  const SYSTEM_PROMPT = `Bạn là một trợ lý AI chuyên về giải phẫu học và sinh học cơ thể người. 
-Bạn giúp học sinh lớp 8 học về các hệ cơ quan trong cơ thể người như:
+  const SYSTEM_PROMPT = `Bạn là một trợ lý AI chuyên về giải phẫu học và sinh học cơ thể người, đặc biệt bám sát chương trình Sinh học lớp 8.
+
+QUY TẮC QUAN TRỌNG:
+1. Ưu tiên tuyệt đối kiến thức trong tài liệu (Sách giáo khoa) được cung cấp.
+2. Nếu câu hỏi nằm ngoài tài liệu, hãy trả lời dựa trên kiến thức chuẩn xác nhưng cần chú thích rõ là "Kiến thức mở rộng".
+3. Trả lời ngắn gọn, súc tích, dễ hiểu cho học sinh.
+
+Chủ đề chính:
 - Hệ Thần kinh
 - Hệ Tuần hoàn
 - Hệ Hô hấp
@@ -61,8 +79,7 @@ Bạn giúp học sinh lớp 8 học về các hệ cơ quan trong cơ thể ng�
 - Hệ Sinh dục
 - Hệ Vận động
 
-Hãy trả lời một cách dễ hiểu, chính xác và thân thiện. Sử dụng tiếng Việt.
-Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ khóa quan trọng để học sinh dễ nhớ.`;
+Hãy dùng các gạch đầu dòng và **in đậm** các từ khóa quan trọng.`;
 
   useEffect(() => {
     if (open) {
@@ -198,6 +215,10 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
   };
 
   const fetchChatResponse = async (userMessage) => {
+    // Ưu tiên 0: Sử dụng Gemini API với File (RAG) nếu đã cấu hình
+    if (GEMINI_API_KEY && GEMINI_FILE_URI) {
+      return await chatWithGeminiRAG(userMessage);
+    }
     // Ưu tiên 1: Gọi Vercel API. Nếu có lỗi, nó sẽ được `handleSend` bắt và hiển thị trong UI.
     if (VERCEL_API_URL) {
       // Loại bỏ dấu / ở cuối VERCEL_API_URL nếu có để tránh thành //api/chat
@@ -264,6 +285,58 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
     return mockAIResponse(userMessage);
   };
 
+  // --- HÀM XỬ LÝ GEMINI API VỚI FILE (RAG) ---
+  const chatWithGeminiRAG = async (userMessage) => {
+    const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+    const requestBody = {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: userMessage },
+            { 
+              file_data: { 
+                mime_type: GEMINI_FILE_MIME_TYPE, 
+                file_uri: GEMINI_FILE_URI 
+              } 
+            }
+          ]
+        }
+      ],
+      systemInstruction: {
+        parts: { text: SYSTEM_PROMPT }
+      },
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+      }
+    };
+
+    try {
+      const response = await fetch(GEMINI_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Gemini API Error:", errorData);
+        throw new Error(errorData.error?.message || 'Lỗi kết nối với Gemini API.');
+      }
+
+      const data = await response.json();
+      // Kiểm tra xem có response trả về không
+      const text = data.candidates?.[0]?.content.parts[0]?.text;
+      return text || "AI không đưa ra phản hồi. Vui lòng thử lại.";
+    } catch (error) {
+      console.error("Lỗi khi gọi Gemini RAG:", error);
+      // Ném lỗi để khối try...catch trong handleSend có thể bắt được
+      throw error;
+    }
+  };
+
   // Mock response - THAY THẾ BẰNG GỌI OPENAI THẬT
   const mockAIResponse = async (userMessage) => {
     // Simulate API delay
@@ -297,6 +370,15 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
 
   const handleClose = () => {
     setOpen(false);
+  };
+
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
+  };
+
+  const handleHistoryClick = (messageId) => {
+    // Logic để scroll đến tin nhắn (nếu cần) hoặc load lại session cũ
+    // Hiện tại danh sách messages là flat list, nên ta có thể highlight hoặc scroll
   };
 
   // --- CÁC TÍNH NĂNG MỚI ---
@@ -455,6 +537,9 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <IconButton onClick={toggleSidebar} sx={{ color: 'white' }}>
+                <MenuIcon />
+              </IconButton>
               <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
                 <SmartToyIcon />
               </Avatar>
@@ -480,14 +565,50 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
             </Box>
           </Box>
 
-          {/* Messages Container */}
+          {/* Main Content Area (Flex Row) */}
+          <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+            
+            {/* Sidebar (History) */}
+            <Box 
+              sx={{ 
+                width: sidebarOpen ? 240 : 0, 
+                transition: 'width 0.3s', 
+                borderRight: 1, 
+                borderColor: 'divider',
+                bgcolor: 'background.paper',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+              }}
+            >
+              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+                <Typography variant="subtitle2" fontWeight="bold">Lịch sử trò chuyện</Typography>
+              </Box>
+              <List sx={{ overflowY: 'auto', flexGrow: 1 }}>
+                {messages.filter(m => m.role === 'user').map((msg) => (
+                  <ListItem key={msg.id} disablePadding>
+                    <ListItemButton onClick={() => handleHistoryClick(msg.id)}>
+                      <ListItemText 
+                        primary={msg.content} 
+                        primaryTypographyProps={{ noWrap: true, fontSize: '0.9rem' }}
+                        secondary={new Date(msg.timestamp).toLocaleDateString('vi-VN')}
+                        secondaryTypographyProps={{ fontSize: '0.7rem' }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                ))}
+              </List>
+            </Box>
+
+            {/* Chat Area (Messages + Input) */}
+            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <Box
             ref={chatContainerRef}
             sx={{
               flexGrow: 1,
               overflowY: 'auto',
               p: 2,
-              bgcolor: 'grey.50',
+              bgcolor: theme.palette.mode === 'dark' ? 'action.hover' : 'grey.50',
               display: 'flex',
               flexDirection: 'column',
               gap: 2
@@ -512,7 +633,7 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
                   sx={{
                     p: 1.5,
                     maxWidth: '75%',
-                    bgcolor: msg.role === 'user' ? 'primary.main' : 'white',
+                    bgcolor: msg.role === 'user' ? 'primary.main' : 'background.paper',
                     color: msg.role === 'user' ? 'white' : 'text.primary',
                     borderRadius: 2,
                     position: 'relative',
@@ -577,7 +698,7 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
                 <Avatar sx={{ bgcolor: 'primary.main', width: 32, height: 32 }}>
                   <SmartToyIcon sx={{ fontSize: 20 }} />
                 </Avatar>
-                <Paper elevation={1} sx={{ p: 1.5, bgcolor: 'white' }}>
+                <Paper elevation={1} sx={{ p: 1.5, bgcolor: 'background.paper' }}>
                   <CircularProgress size={16} />
                 </Paper>
               </Box>
@@ -587,7 +708,7 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
           </Box>
 
           {/* Quick Actions */}
-          <Box sx={{ p: 1, borderTop: 1, borderColor: 'divider', bgcolor: 'white', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Box sx={{ p: 1, borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
              <Chip 
               icon={<QuizIcon />} 
               label="Tạo Quiz" 
@@ -614,7 +735,7 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
               p: 2,
               borderTop: 1,
               borderColor: 'divider',
-              bgcolor: 'white',
+              bgcolor: 'background.paper',
               borderRadius: '0 0 16px 16px'
             }}
           >
@@ -649,6 +770,8 @@ Khi giải thích, hãy dùng các gạch đầu dòng và in đậm các từ k
               </IconButton>
             </Box>
           </Box>
+            </Box> {/* End Chat Area */}
+          </Box> {/* End Main Content Area */}
         </Box>
       </Modal>
     </>
